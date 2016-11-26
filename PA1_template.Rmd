@@ -5,21 +5,86 @@ output:
     keep_md: true
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a *Fitbit, Nike Fuelband*, or *Jawbone Up*. These type of devices are part of the **quantified self** movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This device collects data at 5 minute intervals through out the day. This report is based on two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
 
 ## Loading and preprocessing the data
+```{r}
+# reading compressed dataset
+activity.raw <- data.table::as.data.table(read.csv(unzip('activity.zip')))
 
+# removing NA values
+activity <- na.omit(activity.raw)
+```
 
+## Descriptive Statistics for the number of steps by day
 
-## What is mean total number of steps taken per day?
+The following histogram describes the number of steps taken in any given day:
+```{r}
+daily <- activity[,.(steps=sum(steps)),by=.(date)] 
+hist(daily$steps, main = 'Number of steps by day', xlab = 'Number of Steps')
+```
 
+A basic statistical summary of the of the number of steps grouped by day follows:
+```{r}
+summary(daily$steps)
+```
 
+Which gives us an average of around `r format(round(mean(daily$steps),-2),format='d',big.mark=',')` steps per day.
 
-## What is the average daily activity pattern?
+# Time series for number of steps
+When considering the evolution over time of the number of steps by the user we obtain the following plot:
+```{r}
+daily.ts <- xts::xts(daily$steps, order.by=as.POSIXct(daily$date))
+names(daily.ts) <- 'Steps'
+dygraphs::dygraph(daily.ts, main = 'Daily Steps')
+```
 
-
+## Interval Analysis
+The 5-minute intervals that, on average, contain the highest number of steps are listed in order:
+```{r}
+fivemin <- activity[,.(avg.steps=mean(steps)), by=.(interval)] 
+fivemin.ord <- fivemin[order(-avg.steps)]
+head(fivemin.ord)
+```
+The intervals with the highest number of steps cluster around the higuest at interval `r fivemin.ord$interval[1]`.
 
 ## Imputing missing values
+The dataset contains nonetheless numerous missing values in the step column that we can input using a [predictive mean matching algorithm](http://statisticalhorizons.com/predictive-mean-matching).
+
+```{r}
+suppressMessages(library(mice))
+suppressWarnings(activity.comp <- data.table::as.data.table(complete(mice(activity.raw, printFlag = FALSE))))
+```
+If now we plot the histogram for the daily number of steps witht he imputed data we have:
+```{r}
+daily.comp <- activity.comp[,.(steps=sum(steps)),by=.(date)] 
+hist(daily.comp$steps, main = 'Number of steps by day (With imputed Data)', xlab = 'Number of Steps')
+```
+
+## Weekdays vs Weekends
+
+The following panel plot compares  the average number of steps taken per 5-minute interval across weekdays and weekends:
+```{r}
+activity.comp <- activity.comp[,day := weekdays(as.Date(date))]
+activity.comp <- activity.comp[,Day_Type := ifelse(day %in% c('Saturday','Sunday'),'Weekend','Weekday')]
+activity.wk <- activity.comp[,.(steps=sum(steps)),by=.(Day_Type, interval)]
+
+library(lattice)
+xyplot(steps ~ interval | Day_Type, 
+       data =  activity.wk,
+       type = 'l',
+  	main="Number of Steps on Weekdays vs Weekends", 
+   ylab="Steps", xlab="Period")
 
 
-
-## Are there differences in activity patterns between weekdays and weekends?
+library(ggplot2)
+ggplot(activity.wk,aes(x=interval,y=steps,colour=Day_Type,group=Day_Type)) + geom_line()
+```
